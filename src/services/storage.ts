@@ -147,3 +147,92 @@ export async function getAllBaselines(): Promise<BaselineEntry[]> {
     request.onerror = () => reject(request.error);
   });
 }
+
+// Snapshot types and functions
+export interface DashboardSnapshot {
+  timestamp: number;
+  events: unknown[];
+  marketPrices: Record<string, number>;
+  predictions: Array<{ title: string; yesPrice: number }>;
+  hotspotLevels: Record<string, string>;
+}
+
+const SNAPSHOT_RETENTION_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export async function saveSnapshot(snapshot: DashboardSnapshot): Promise<void> {
+  const database = await initDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction('snapshots', 'readwrite');
+    const store = tx.objectStore('snapshots');
+    store.put(snapshot);
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getSnapshots(fromTime?: number, toTime?: number): Promise<DashboardSnapshot[]> {
+  const database = await initDB();
+  const from = fromTime ?? Date.now() - SNAPSHOT_RETENTION_DAYS * DAY_MS;
+  const to = toTime ?? Date.now();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction('snapshots', 'readonly');
+    const store = tx.objectStore('snapshots');
+    const index = store.index('by_time');
+    const range = IDBKeyRange.bound(from, to);
+    const request = index.getAll(range);
+
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getSnapshotAt(timestamp: number): Promise<DashboardSnapshot | null> {
+  const snapshots = await getSnapshots(timestamp - 15 * 60 * 1000, timestamp + 15 * 60 * 1000);
+  if (snapshots.length === 0) return null;
+
+  // Find closest snapshot to requested time
+  return snapshots.reduce((closest, snap) =>
+    Math.abs(snap.timestamp - timestamp) < Math.abs(closest.timestamp - timestamp) ? snap : closest
+  );
+}
+
+export async function cleanOldSnapshots(): Promise<void> {
+  const database = await initDB();
+  const cutoff = Date.now() - SNAPSHOT_RETENTION_DAYS * DAY_MS;
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction('snapshots', 'readwrite');
+    const store = tx.objectStore('snapshots');
+    const index = store.index('by_time');
+    const range = IDBKeyRange.upperBound(cutoff);
+
+    const request = index.openCursor(range);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getSnapshotTimestamps(): Promise<number[]> {
+  const database = await initDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction('snapshots', 'readonly');
+    const store = tx.objectStore('snapshots');
+    const request = store.getAllKeys();
+
+    request.onsuccess = () => resolve((request.result as number[]) || []);
+    request.onerror = () => reject(request.error);
+  });
+}

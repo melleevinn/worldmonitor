@@ -778,6 +778,23 @@ export class MapComponent {
     this.earthquakes = earthquakes;
     this.render();
   }
+
+  public getHotspotLevels(): Record<string, string> {
+    const levels: Record<string, string> = {};
+    this.hotspots.forEach(spot => {
+      levels[spot.name] = spot.level || 'low';
+    });
+    return levels;
+  }
+
+  public setHotspotLevels(levels: Record<string, string>): void {
+    this.hotspots.forEach(spot => {
+      if (levels[spot.name]) {
+        spot.level = levels[spot.name] as 'high' | 'elevated' | 'low';
+      }
+    });
+    this.render();
+  }
 }
 
 export type { TimeRange };

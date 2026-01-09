@@ -10,8 +10,8 @@ import {
   DEFAULT_MAP_LAYERS,
   STORAGE_KEYS,
 } from '@/config';
-import { fetchCategoryFeeds, fetchMultipleStocks, fetchCrypto, fetchPredictions, fetchEarthquakes, initDB, updateBaseline, calculateDeviation, analyzeCorrelations, clusterNews, addToSignalHistory } from '@/services';
-import { loadFromStorage, saveToStorage } from '@/utils';
+import { fetchCategoryFeeds, fetchMultipleStocks, fetchCrypto, fetchPredictions, fetchEarthquakes, initDB, updateBaseline, calculateDeviation, analyzeCorrelations, clusterNews, addToSignalHistory, saveSnapshot, cleanOldSnapshots } from '@/services';
+import { loadFromStorage, saveToStorage, ExportPanel } from '@/utils';
 import {
   MapComponent,
   NewsPanel,
@@ -23,6 +23,8 @@ import {
   MonitorPanel,
   Panel,
   SignalModal,
+  PlaybackControl,
+  StatusPanel,
 } from '@/components';
 import type { PredictionMarket, MarketData, ClusteredEvent } from '@/types';
 
@@ -36,9 +38,13 @@ export class App {
   private panelSettings: Record<string, PanelConfig>;
   private mapLayers: MapLayers;
   private signalModal: SignalModal | null = null;
+  private playbackControl: PlaybackControl | null = null;
+  private statusPanel: StatusPanel | null = null;
+  private exportPanel: ExportPanel | null = null;
   private latestPredictions: PredictionMarket[] = [];
   private latestMarkets: MarketData[] = [];
   private latestClusters: ClusteredEvent[] = [];
+  private isPlaybackMode = false;
 
   constructor(containerId: string) {
     const el = document.getElementById(containerId);
@@ -57,9 +63,101 @@ export class App {
     await initDB();
     this.renderLayout();
     this.signalModal = new SignalModal();
+    this.setupPlaybackControl();
+    this.setupStatusPanel();
+    this.setupExportPanel();
     this.setupEventListeners();
     await this.loadAllData();
     this.setupRefreshIntervals();
+    this.setupSnapshotSaving();
+    cleanOldSnapshots();
+  }
+
+  private setupStatusPanel(): void {
+    this.statusPanel = new StatusPanel();
+    const headerLeft = this.container.querySelector('.header-left');
+    if (headerLeft) {
+      headerLeft.appendChild(this.statusPanel.getElement());
+    }
+  }
+
+  private setupExportPanel(): void {
+    this.exportPanel = new ExportPanel(() => ({
+      news: this.latestClusters.length > 0 ? this.latestClusters : this.allNews,
+      markets: this.latestMarkets,
+      predictions: this.latestPredictions,
+      timestamp: Date.now(),
+    }));
+
+    const headerRight = this.container.querySelector('.header-right');
+    if (headerRight) {
+      headerRight.insertBefore(this.exportPanel.getElement(), headerRight.firstChild);
+    }
+  }
+
+  private setupPlaybackControl(): void {
+    this.playbackControl = new PlaybackControl();
+    this.playbackControl.onSnapshot((snapshot) => {
+      if (snapshot) {
+        this.isPlaybackMode = true;
+        this.restoreSnapshot(snapshot);
+      } else {
+        this.isPlaybackMode = false;
+        this.loadAllData();
+      }
+    });
+
+    const headerRight = this.container.querySelector('.header-right');
+    if (headerRight) {
+      headerRight.insertBefore(this.playbackControl.getElement(), headerRight.firstChild);
+    }
+  }
+
+  private setupSnapshotSaving(): void {
+    const saveCurrentSnapshot = async () => {
+      if (this.isPlaybackMode) return;
+
+      const marketPrices: Record<string, number> = {};
+      this.latestMarkets.forEach(m => {
+        if (m.price !== null) marketPrices[m.symbol] = m.price;
+      });
+
+      await saveSnapshot({
+        timestamp: Date.now(),
+        events: this.latestClusters,
+        marketPrices,
+        predictions: this.latestPredictions.map(p => ({
+          title: p.title,
+          yesPrice: p.yesPrice
+        })),
+        hotspotLevels: this.map?.getHotspotLevels() ?? {}
+      });
+    };
+
+    saveCurrentSnapshot();
+    setInterval(saveCurrentSnapshot, 15 * 60 * 1000);
+  }
+
+  private restoreSnapshot(snapshot: import('@/services/storage').DashboardSnapshot): void {
+    for (const panel of Object.values(this.newsPanels)) {
+      panel.showLoading();
+    }
+
+    const events = snapshot.events as ClusteredEvent[];
+    this.latestClusters = events;
+
+    const predictions = snapshot.predictions.map((p, i) => ({
+      id: `snap-${i}`,
+      title: p.title,
+      yesPrice: p.yesPrice,
+      noPrice: 1 - p.yesPrice,
+      volume24h: 0,
+      liquidity: 0,
+    }));
+    this.latestPredictions = predictions;
+    (this.panels['polymarket'] as PredictionPanel).renderPredictions(predictions);
+
+    this.map?.setHotspotLevels(snapshot.hotspotLevels);
   }
 
   private renderLayout(): void {
@@ -412,19 +510,31 @@ export class App {
   }
 
   private async loadNewsCategory(category: string, feeds: typeof FEEDS.politics): Promise<NewsItem[]> {
-    const items = await fetchCategoryFeeds(feeds ?? []);
-    const panel = this.newsPanels[category];
+    try {
+      const items = await fetchCategoryFeeds(feeds ?? []);
+      const panel = this.newsPanels[category];
 
-    if (panel) {
-      panel.renderNews(items);
+      if (panel) {
+        panel.renderNews(items);
 
-      // Track and calculate baseline deviation
-      const baseline = await updateBaseline(`news:${category}`, items.length);
-      const deviation = calculateDeviation(items.length, baseline);
-      panel.setDeviation(deviation.zScore, deviation.percentChange, deviation.level);
+        const baseline = await updateBaseline(`news:${category}`, items.length);
+        const deviation = calculateDeviation(items.length, baseline);
+        panel.setDeviation(deviation.zScore, deviation.percentChange, deviation.level);
+      }
+
+      this.statusPanel?.updateFeed(category.charAt(0).toUpperCase() + category.slice(1), {
+        status: 'ok',
+        itemCount: items.length,
+      });
+
+      return items;
+    } catch (error) {
+      this.statusPanel?.updateFeed(category.charAt(0).toUpperCase() + category.slice(1), {
+        status: 'error',
+        errorMessage: String(error),
+      });
+      return [];
     }
-
-    return items;
   }
 
   private async loadNews(): Promise<void> {
@@ -492,10 +602,19 @@ export class App {
   }
 
   private async loadPredictions(): Promise<void> {
-    const predictions = await fetchPredictions();
-    this.latestPredictions = predictions;
-    (this.panels['polymarket'] as PredictionPanel).renderPredictions(predictions);
-    this.runCorrelationAnalysis();
+    try {
+      const predictions = await fetchPredictions();
+      this.latestPredictions = predictions;
+      (this.panels['polymarket'] as PredictionPanel).renderPredictions(predictions);
+
+      this.statusPanel?.updateFeed('Polymarket', { status: 'ok', itemCount: predictions.length });
+      this.statusPanel?.updateApi('Polymarket', { status: 'ok' });
+
+      this.runCorrelationAnalysis();
+    } catch (error) {
+      this.statusPanel?.updateFeed('Polymarket', { status: 'error', errorMessage: String(error) });
+      this.statusPanel?.updateApi('Polymarket', { status: 'error' });
+    }
   }
 
   private async loadEarthquakes(): Promise<void> {

@@ -5,6 +5,8 @@ export class SignalModal {
   private currentSignals: CorrelationSignal[] = [];
   private audioEnabled = true;
   private audio: HTMLAudioElement | null = null;
+  private signalBadge: HTMLElement | null = null;
+  private pendingCount = 0;
 
   constructor() {
     this.element = document.createElement('div');
@@ -29,6 +31,24 @@ export class SignalModal {
     document.body.appendChild(this.element);
     this.setupEventListeners();
     this.initAudio();
+    this.createSignalBadge();
+  }
+
+  private createSignalBadge(): void {
+    this.signalBadge = document.createElement('button');
+    this.signalBadge.className = 'signal-badge hidden';
+    this.signalBadge.innerHTML = '<span class="signal-badge-icon">⚡</span><span class="signal-badge-count">0</span>';
+    this.signalBadge.addEventListener('click', () => {
+      if (this.currentSignals.length > 0) {
+        this.renderSignals();
+        this.element.classList.add('active');
+      }
+    });
+
+    const headerRight = document.querySelector('.header-right');
+    if (headerRight) {
+      headerRight.insertBefore(this.signalBadge, headerRight.firstChild);
+    }
   }
 
   private initAudio(): void {
@@ -61,22 +81,46 @@ export class SignalModal {
     if (signals.length === 0) return;
 
     this.currentSignals = signals;
+    this.pendingCount = signals.length;
+    this.updateBadge();
     this.renderSignals();
     this.element.classList.add('active');
 
     if (this.audioEnabled && this.audio) {
+      this.audio.currentTime = 0;
       this.audio.play().catch(() => {});
     }
 
     // Flash header
-    document.querySelector('.header')?.classList.add('signal-flash');
-    setTimeout(() => {
-      document.querySelector('.header')?.classList.remove('signal-flash');
-    }, 2000);
+    const header = document.querySelector('.header');
+    header?.classList.add('signal-flash');
+    setTimeout(() => header?.classList.remove('signal-flash'), 2000);
+
+    // Pulse status indicator
+    const statusDot = document.querySelector('.status-dot');
+    statusDot?.classList.add('signal-pulse');
+    setTimeout(() => statusDot?.classList.remove('signal-pulse'), 5000);
+  }
+
+  private updateBadge(): void {
+    if (!this.signalBadge) return;
+
+    const countEl = this.signalBadge.querySelector('.signal-badge-count');
+    if (countEl) countEl.textContent = String(this.pendingCount);
+
+    if (this.pendingCount > 0) {
+      this.signalBadge.classList.remove('hidden');
+      this.signalBadge.classList.add('active');
+    } else {
+      this.signalBadge.classList.add('hidden');
+      this.signalBadge.classList.remove('active');
+    }
   }
 
   public hide(): void {
     this.element.classList.remove('active');
+    this.pendingCount = 0;
+    this.updateBadge();
   }
 
   private renderSignals(): void {

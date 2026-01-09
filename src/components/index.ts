@@ -6,3 +6,5 @@ export * from './MarketPanel';
 export * from './PredictionPanel';
 export * from './MonitorPanel';
 export * from './SignalModal';
+export * from './PlaybackControl';
+export * from './StatusPanel';
