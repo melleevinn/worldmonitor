@@ -1,5 +1,14 @@
 # WorldMonitor Development Notes
 
+## CRITICAL: Git Branch Rules
+
+**NEVER push to a different branch than the one you're working on without explicit user permission.**
+
+- If on `beta`, only push to `beta`
+- If on `main`, only push to `main`
+- NEVER merge branches or push to `main` without asking first
+- NEVER assume deployment is wanted - always ask
+
 ## Critical: RSS Proxy Allowlist
 
 When adding new RSS feeds in `src/config/feeds.ts`, you **MUST** also add the feed domains to the allowlist in `api/rss-proxy.js`.
