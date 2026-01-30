@@ -2454,8 +2454,9 @@ body.playback-mode .status-dot {
 }
 
 .protest-icon {
-  font-size: 16px;
-  filter: drop-shadow(0 0 6px var(--protest-color));
+  font-size: 14px;
+  color: var(--protest-color);
+  filter: drop-shadow(0 0 4px var(--protest-color));
 }
 
 .protest-label {
@@ -2472,7 +2473,7 @@ body.playback-mode .status-dot {
 }
 
 .protest-marker.cluster .protest-icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .protest-marker.cluster .cluster-badge {

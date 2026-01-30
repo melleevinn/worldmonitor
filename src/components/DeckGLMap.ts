@@ -641,7 +641,7 @@ export class DeckGLMap {
 
       const icon = document.createElement('div');
       icon.className = 'protest-icon';
-      icon.textContent = hasRiot ? '🔥' : primaryEvent.eventType === 'strike' ? '✊' : '📢';
+      icon.textContent = hasRiot ? '🔥' : primaryEvent.eventType === 'strike' ? '✊' : '✦';
       div.appendChild(icon);
 
       if (isCluster) {
