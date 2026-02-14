@@ -297,6 +297,16 @@ async function dispatch(requestUrl, req, routes, context) {
   if (requestUrl.pathname === '/api/service-status') {
     return handleLocalServiceStatus(context);
   }
+
+  const expectedToken = process.env.LOCAL_API_TOKEN;
+  if (expectedToken) {
+    const authHeader = req.headers.authorization || '';
+    if (authHeader !== `Bearer ${expectedToken}`) {
+      context.logger.warn(`[local-api] unauthorized request to ${requestUrl.pathname}`);
+      return json({ error: 'Unauthorized' }, 401);
+    }
+  }
+
   if (requestUrl.pathname === '/api/local-status') {
     return json({
       success: true,

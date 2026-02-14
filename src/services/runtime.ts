@@ -184,6 +184,7 @@ export function installRuntimeFetchPatch(): void {
 
   const nativeFetch = window.fetch.bind(window);
   const localBase = getApiBaseUrl();
+  let localApiToken: string | null = null;
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const target = getApiTargetFromRequestInput(input);
@@ -197,12 +198,25 @@ export function installRuntimeFetchPatch(): void {
       return nativeFetch(input, init);
     }
 
+    if (!localApiToken) {
+      try {
+        const { tryInvokeTauri } = await import('@/services/tauri-bridge');
+        localApiToken = await tryInvokeTauri<string>('get_local_api_token');
+      } catch { /* token unavailable — sidecar may not require it */ }
+    }
+
+    const headers = new Headers(init?.headers);
+    if (localApiToken) {
+      headers.set('Authorization', `Bearer ${localApiToken}`);
+    }
+    const localInit = { ...init, headers };
+
     const localUrl = `${localBase}${target}`;
     if (debug) console.log(`[fetch] intercept → ${target}`);
 
     try {
       const t0 = performance.now();
-      const response = await fetchLocalWithStartupRetry(nativeFetch, localUrl, init);
+      const response = await fetchLocalWithStartupRetry(nativeFetch, localUrl, localInit);
       if (debug) console.log(`[fetch] ${target} → ${response.status} (${Math.round(performance.now() - t0)}ms)`);
       return response;
     } catch (error) {

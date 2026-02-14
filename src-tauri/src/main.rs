@@ -40,6 +40,7 @@ const SUPPORTED_SECRET_KEYS: [&str; 15] = [
 #[derive(Default)]
 struct LocalApiState {
     child: Mutex<Option<Child>>,
+    token: Mutex<Option<String>>,
 }
 
 fn secret_entry(key: &str) -> Result<Entry, String> {
@@ -47,6 +48,32 @@ fn secret_entry(key: &str) -> Result<Entry, String> {
         return Err(format!("Unsupported secret key: {key}"));
     }
     Entry::new(KEYRING_SERVICE, key).map_err(|e| format!("Keyring init failed: {e}"))
+}
+
+fn generate_local_token() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let state = RandomState::new();
+    let mut h1 = state.build_hasher();
+    h1.write_u64(std::process::id() as u64);
+    let a = h1.finish();
+    let mut h2 = state.build_hasher();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    h2.write_u128(nanos);
+    let b = h2.finish();
+    format!("{a:016x}{b:016x}")
+}
+
+#[tauri::command]
+fn get_local_api_token(state: tauri::State<'_, LocalApiState>) -> Result<String, String> {
+    let token = state
+        .token
+        .lock()
+        .map_err(|_| "Failed to lock local API token".to_string())?;
+    token.clone().ok_or_else(|| "Token not generated".to_string())
 }
 
 #[tauri::command]
@@ -460,11 +487,20 @@ fn start_local_api(app: &AppHandle) -> Result<(), String> {
     );
     append_desktop_log(app, "INFO", &format!("resolved node binary={}", node_binary.display()));
 
+    // Generate a unique token for local API auth (prevents other local processes from accessing sidecar)
+    let mut token_slot = state.token.lock().map_err(|_| "Failed to lock token slot")?;
+    if token_slot.is_none() {
+        *token_slot = Some(generate_local_token());
+    }
+    let local_api_token = token_slot.clone().unwrap();
+    drop(token_slot);
+
     let mut cmd = Command::new(&node_binary);
     cmd.arg(&script)
         .env("LOCAL_API_PORT", LOCAL_API_PORT)
         .env("LOCAL_API_RESOURCE_DIR", resource_root)
         .env("LOCAL_API_MODE", "tauri-sidecar")
+        .env("LOCAL_API_TOKEN", &local_api_token)
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_file_err));
 
@@ -511,6 +547,7 @@ fn main() {
             get_secret,
             set_secret,
             delete_secret,
+            get_local_api_token,
             read_cache_entry,
             write_cache_entry,
             open_logs_folder,
