@@ -231,6 +231,7 @@
       "macSilicon": "macOS (Apple Silicon)",
       "macIntel": "macOS (Intel)",
       "windows": "Windows (.exe)",
+      "linux": "Linux (.AppImage)",
       "showAllPlatforms": "全プラットフォームを表示",
       "showLess": "折りたたむ",
       "dismiss": "閉じる"

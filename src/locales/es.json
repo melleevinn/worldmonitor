@@ -231,6 +231,7 @@
       "macSilicon": "macOS (Apple Silicio)",
       "macIntel": "MacOS (Intel)",
       "windows": "Windows (.exe)",
+      "linux": "Linux (.AppImage)",
       "dismiss": "Despedir",
       "showAllPlatforms": "Mostrar todas las plataformas",
       "showLess": "Mostrar menos"

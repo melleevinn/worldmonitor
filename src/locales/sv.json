@@ -148,6 +148,7 @@
       "macSilicon": "macOS (Apple Silicon)",
       "macIntel": "macOS (Intel)",
       "windows": "Windows (.exe)",
+      "linux": "Linux (.AppImage)",
       "dismiss": "Avfärda",
       "showAllPlatforms": "Visa alla plattformar",
       "showLess": "Visa mindre"

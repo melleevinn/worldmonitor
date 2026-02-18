@@ -8,6 +8,7 @@ const PLATFORM_PATTERNS = {
   'windows-msi': (name) => name.endsWith('_x64_en-US.msi'),
   'macos-arm64': (name) => name.endsWith('_aarch64.dmg'),
   'macos-x64': (name) => name.endsWith('_x64.dmg') && !name.includes('setup'),
+  'linux-appimage': (name) => name.endsWith('_amd64.AppImage'),
 };
 
 export default async function handler(req) {
